@@ -1,21 +1,26 @@
-// Types for momentum app
+// Types for momentum app — matches Supabase DB schema
+
+export interface Record {
+  id: string;
+  categoryId: string;
+  todoId: string;
+  content: string;
+  collapsed: boolean;
+  createdAt: string;
+}
 
 export interface Todo {
   id: string;
-  text: string;
-  completed: boolean;
   categoryId: string;
-  record: string; // markdown/plain text record for this todo
+  title: string;
+  completed: boolean;
+  orderIndex: number;
+  completedAt: string | null;
+  records: Record[];
 }
 
 export interface Category {
   id: string;
   name: string;
-  slug: string;
-  record: string; // category-level record
   todos: Todo[];
-}
-
-export interface AppState {
-  categories: Category[];
 }

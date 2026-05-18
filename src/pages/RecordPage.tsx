@@ -1,19 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, ChevronUp, Search, MoreHorizontal, Check } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Plus, Trash2, Check } from 'lucide-react';
 import { useApp } from '../context';
-import type { Todo } from '../types';
+import type { Todo, Record } from '../types';
 
 function AutoResizeTextarea({
   value,
   onChange,
   placeholder,
   className = '',
+  onBlur,
+  onKeyDown,
+  autoFocus,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  onBlur?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+  autoFocus?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -31,8 +37,75 @@ function AutoResizeTextarea({
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       rows={3}
+      onBlur={onBlur}
+      onKeyDown={onKeyDown}
+      autoFocus={autoFocus}
       className={`w-full resize-none outline-none bg-transparent text-sm text-gray-700 placeholder-gray-300 leading-relaxed ${className}`}
     />
+  );
+}
+
+function RecordItem({
+  record,
+  onToggleCollapsed,
+  onUpdateContent,
+  onDelete,
+}: {
+  record: Record;
+  onToggleCollapsed: () => void;
+  onUpdateContent: (content: string) => void;
+  onDelete: () => void;
+}) {
+  const [content, setContent] = useState(record.content);
+  const [editing, setEditing] = useState(false);
+
+  const handleBlur = () => {
+    setEditing(false);
+    if (content !== record.content) {
+      onUpdateContent(content);
+    }
+  };
+
+  return (
+    <div className="group/record">
+      {/* Record header */}
+      <div className="flex items-center gap-2 py-2">
+        <button
+          onClick={onToggleCollapsed}
+          className="opacity-0 group-hover/record:opacity-100 transition-opacity"
+        >
+          {record.collapsed ? (
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400" strokeWidth={1.5} />
+          ) : (
+            <ChevronUp className="w-3.5 h-3.5 text-gray-400" strokeWidth={1.5} />
+          )}
+        </button>
+        <span className="flex-1 text-xs text-gray-300">
+          {new Date(record.createdAt).toLocaleDateString()}
+        </span>
+        <button
+          onClick={onDelete}
+          className="opacity-0 group-hover/record:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-50"
+        >
+          <Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400" strokeWidth={1.5} />
+        </button>
+      </div>
+
+      {/* Record content */}
+      {!record.collapsed && (
+        <div
+          className="pb-3"
+          onClick={() => setEditing(true)}
+        >
+          <AutoResizeTextarea
+            value={editing ? content : record.content}
+            onChange={v => setContent(v)}
+            onBlur={handleBlur}
+            placeholder="Write a record..."
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -45,15 +118,35 @@ function TodoRecordSection({
   categoryId: string;
   isHighlighted: boolean;
 }) {
-  const { toggleTodo, updateTodoRecord } = useApp();
-  const [collapsed, setCollapsed] = useState(false);
+  const { toggleTodo, addRecord, toggleRecordCollapsed, updateRecord, deleteRecord } = useApp();
   const sectionRef = useRef<HTMLDivElement>(null);
+  const [addingRecord, setAddingRecord] = useState(false);
+  const [newRecordContent, setNewRecordContent] = useState('');
 
   useEffect(() => {
     if (isHighlighted && sectionRef.current) {
       sectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [isHighlighted]);
+
+  const handleAddRecord = () => {
+    if (newRecordContent.trim()) {
+      addRecord(categoryId, todo.id, newRecordContent.trim());
+      setNewRecordContent('');
+      setAddingRecord(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleAddRecord();
+    }
+    if (e.key === 'Escape') {
+      setAddingRecord(false);
+      setNewRecordContent('');
+    }
+  };
 
   return (
     <div
@@ -83,33 +176,55 @@ function TodoRecordSection({
             todo.completed ? 'line-through text-gray-400' : 'text-gray-800'
           }`}
         >
-          {todo.text}
+          {todo.title}
         </h3>
 
-        {/* Collapse toggle */}
+        {/* Add record button */}
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => setAddingRecord(true)}
           className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-100"
+          title="Add record"
         >
-          {collapsed ? (
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400" strokeWidth={1.5} />
-          ) : (
-            <ChevronUp className="w-3.5 h-3.5 text-gray-400" strokeWidth={1.5} />
-          )}
+          <Plus className="w-3.5 h-3.5 text-gray-400" strokeWidth={1.5} />
         </button>
       </div>
 
-      {/* Record area */}
-      {!collapsed && (
-        <div className="px-4 pb-4">
-          <AutoResizeTextarea
-            value={todo.record}
-            onChange={v => updateTodoRecord(categoryId, todo.id, v)}
-            placeholder="Write something about this todo..."
-            className="min-h-[80px]"
+      {/* Records list */}
+      <div className="px-4 pb-2">
+        {todo.records.map(record => (
+          <RecordItem
+            key={record.id}
+            record={record}
+            onToggleCollapsed={() => toggleRecordCollapsed(record.id, !record.collapsed)}
+            onUpdateContent={(content) => updateRecord(record.id, content)}
+            onDelete={() => deleteRecord(record.id)}
           />
-        </div>
-      )}
+        ))}
+
+        {/* Add record input */}
+        {addingRecord && (
+          <div className="mb-2">
+            <AutoResizeTextarea
+              value={newRecordContent}
+              onChange={v => setNewRecordContent(v)}
+              onKeyDown={handleKeyDown}
+              onBlur={() => {
+                if (!newRecordContent.trim()) {
+                  setAddingRecord(false);
+                } else {
+                  handleAddRecord();
+                }
+              }}
+              placeholder="Write a record... (Enter to save, Esc to cancel)"
+              autoFocus
+            />
+          </div>
+        )}
+
+        {!addingRecord && todo.records.length === 0 && (
+          <p className="text-xs text-gray-200 pb-2">No records yet.</p>
+        )}
+      </div>
 
       {/* Divider */}
       <div className="border-b border-gray-100 mx-4" />
@@ -118,20 +233,19 @@ function TodoRecordSection({
 }
 
 export default function RecordPage() {
-  const { slug } = useParams<{ slug: string }>();
+  const { categoryId } = useParams<{ categoryId: string }>();
   const navigate = useNavigate();
-  const { categories, updateCategoryRecord } = useApp();
+  const { categories } = useApp();
   const [highlightedTodoId, setHighlightedTodoId] = useState<string | null>(null);
   const [completedOpen, setCompletedOpen] = useState(false);
 
-  const category = categories.find(c => c.slug === slug);
+  const category = categories.find(c => c.id === categoryId);
 
   // Handle anchor from URL hash
   useEffect(() => {
     const hash = window.location.hash.replace('#', '');
     if (hash) {
       setHighlightedTodoId(hash);
-      // Clear highlight after a moment
       setTimeout(() => setHighlightedTodoId(null), 2500);
     }
   }, []);
@@ -160,33 +274,10 @@ export default function RecordPage() {
             <span>/</span>
             <span className="text-gray-600 font-medium">{category.name}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-              <Search className="w-4 h-4 text-gray-400" strokeWidth={1.5} />
-            </button>
-            <button className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-              <MoreHorizontal className="w-4 h-4 text-gray-400" strokeWidth={1.5} />
-            </button>
-          </div>
         </div>
 
         {/* Category Title */}
         <h1 className="text-3xl font-semibold text-gray-900 mb-8">{category.name}</h1>
-
-        {/* Category Record */}
-        <div className="mb-10">
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-3">
-            Category Reflection
-          </p>
-          <div className="border border-gray-100 rounded-xl p-4 bg-white hover:border-gray-200 transition-colors">
-            <AutoResizeTextarea
-              value={category.record}
-              onChange={v => updateCategoryRecord(category.id, v)}
-              placeholder="Write your thoughts about this category..."
-              className="min-h-[100px]"
-            />
-          </div>
-        </div>
 
         {/* Todos Section */}
         <div>

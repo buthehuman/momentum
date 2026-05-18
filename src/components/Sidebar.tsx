@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutGrid, BookOpen, Archive, Search, Circle } from 'lucide-react';
+import { LayoutGrid, BookOpen, Archive, Search, Circle, LogOut } from 'lucide-react';
+import { useApp } from '../context';
 
 const quote = {
   text: 'The quieter you become, the clearer you see.',
@@ -7,6 +8,7 @@ const quote = {
 
 export default function Sidebar() {
   const location = useLocation();
+  const { user, signOut } = useApp();
 
   const navItems = [
     { to: '/', icon: LayoutGrid, label: 'Overview' },
@@ -14,6 +16,8 @@ export default function Sidebar() {
     { to: '/archive', icon: Archive, label: 'Archive' },
     { to: '/search', icon: Search, label: 'Search' },
   ];
+
+  const userInitial = user?.email?.charAt(0).toUpperCase() ?? 'Y';
 
   return (
     <aside className="w-[200px] min-w-[200px] h-screen flex flex-col border-r border-gray-100 bg-white">
@@ -56,12 +60,24 @@ export default function Sidebar() {
           <p className="text-xs text-gray-400 leading-relaxed mt-1">{quote.text}</p>
         </div>
 
-        {/* User */}
-        <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-          <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
-            <span className="text-xs text-gray-500">Y</span>
+        {/* User + Sign out */}
+        <div className="flex items-center justify-between pt-3 border-t border-gray-100 group">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+              <span className="text-xs text-gray-500">{userInitial}</span>
+            </div>
+            <span className="text-xs text-gray-600 truncate max-w-[80px]">
+              {user?.email ?? 'You'}
+            </span>
           </div>
-          <span className="text-xs text-gray-600">You</span>
+
+          <button
+            onClick={() => signOut()}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50"
+            title="Sign out"
+          >
+            <LogOut className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" strokeWidth={1.5} />
+          </button>
         </div>
       </div>
     </aside>

@@ -1,0 +1,52 @@
+-- categories
+create table categories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamp with time zone default now()
+);
+
+-- todos
+create table todos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  category_id uuid references categories(id) on delete cascade,
+  title text not null,
+  completed boolean default false,
+  order_index int default 0,
+  completed_at timestamp with time zone,
+  created_at timestamp with time zone default now()
+);
+
+-- records
+create table records (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  category_id uuid references categories(id) on delete cascade,
+  todo_id uuid references todos(id) on delete cascade,
+  content text not null,
+  collapsed boolean default false,
+  created_at timestamp with time zone default now()
+);
+
+
+alter table categories enable row level security;
+alter table todos enable row level security;
+alter table records enable row level security;
+
+
+
+create policy "Users can manage their own categories"
+on categories
+for all
+using (auth.uid() = user_id);
+
+create policy "Users can manage their own todos"
+on todos
+for all
+using (auth.uid() = user_id);
+
+create policy "Users can manage their own records"
+on records
+for all
+using (auth.uid() = user_id);

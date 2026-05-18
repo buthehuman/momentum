@@ -1,97 +1,312 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import type { Category, Todo } from './types';
-import { loadData, saveData } from './store';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
+import type { Category, Todo, Record } from './types';
+import {
+  fetchAllCategories,
+  addCategory as apiAddCategory,
+  deleteCategory as apiDeleteCategory,
+  addTodo as apiAddTodo,
+  toggleTodo as apiToggleTodo,
+  deleteTodo as apiDeleteTodo,
+  addRecord as apiAddRecord,
+  updateRecord as apiUpdateRecord,
+  toggleRecordCollapsed as apiToggleRecordCollapsed,
+  deleteRecord as apiDeleteRecord,
+} from './store';
 
 interface AppContextValue {
+  // Auth
+  user: User | null;
+  authLoading: boolean;
+  signOut: () => Promise<void>;
+
+  // Data
   categories: Category[];
+  dataLoading: boolean;
+  error: string | null;
+
+  // Category actions
   addCategory: (name: string) => void;
   deleteCategory: (id: string) => void;
-  updateCategoryRecord: (id: string, record: string) => void;
-  addTodo: (categoryId: string, text: string) => void;
+
+  // Todo actions
+  addTodo: (categoryId: string, title: string) => void;
   toggleTodo: (categoryId: string, todoId: string) => void;
   deleteTodo: (categoryId: string, todoId: string) => void;
-  updateTodoRecord: (categoryId: string, todoId: string, record: string) => void;
-  updateTodoText: (categoryId: string, todoId: string, text: string) => void;
+
+  // Record actions
+  addRecord: (categoryId: string, todoId: string, content: string) => void;
+  updateRecord: (recordId: string, content: string) => void;
+  toggleRecordCollapsed: (recordId: string, collapsed: boolean) => void;
+  deleteRecord: (recordId: string) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [categories, setCategories] = useState<Category[]>(() => loadData());
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Auth: check session on mount & listen for changes ──
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  // ── Data: load when user exists ──
+  const loadData = useCallback(async () => {
+    if (!user) return;
+    setDataLoading(true);
+    setError(null);
+    try {
+      const data = await fetchAllCategories();
+      setCategories(data);
+    } catch (err) {
+      console.error('Failed to load categories:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+    } finally {
+      setDataLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => {
-    saveData(categories);
-  }, [categories]);
+    if (user) {
+      loadData();
+    } else {
+      setCategories([]);
+      setError(null);
+    }
+  }, [user, loadData]);
 
-  const addCategory = useCallback((name: string) => {
-    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const id = slug + '-' + Date.now();
-    setCategories(prev => [...prev, { id, name, slug: id, record: '', todos: [] }]);
+  // ── Sign out ──
+  const handleSignOut = useCallback(async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setCategories([]);
   }, []);
 
-  const deleteCategory = useCallback((id: string) => {
-    setCategories(prev => prev.filter(c => c.id !== id));
-  }, []);
+  // ── Helper: optimistic update + re-fetch ──
+  const mutate = useCallback(
+    async (optimisticFn: () => void, apiCall: Promise<void>) => {
+      optimisticFn();
+      await apiCall;
+      try {
+        const data = await fetchAllCategories();
+        setCategories(data);
+      } catch {
+        // keep optimistic state on re-fetch failure
+      }
+    },
+    []
+  );
 
-  const updateCategoryRecord = useCallback((id: string, record: string) => {
-    setCategories(prev => prev.map(c => c.id === id ? { ...c, record } : c));
-  }, []);
+  // ── Category actions ──
+  const handleAddCategory = useCallback(
+    (name: string) =>
+      mutate(
+        () => {
+          const tempId = 'temp-' + Date.now();
+          setCategories(prev => [...prev, { id: tempId, name, todos: [] }]);
+        },
+        apiAddCategory(name, user!.id)
+      ),
+    [mutate, user]
+  );
 
-  const addTodo = useCallback((categoryId: string, text: string) => {
-    const todo: Todo = {
-      id: Date.now().toString(),
-      text,
-      completed: false,
-      categoryId,
-      record: '',
-    };
-    setCategories(prev => prev.map(c =>
-      c.id === categoryId ? { ...c, todos: [...c.todos, todo] } : c
-    ));
-  }, []);
+  const handleDeleteCategory = useCallback(
+    (id: string) =>
+      mutate(() => setCategories(prev => prev.filter(c => c.id !== id)), apiDeleteCategory(id)),
+    [mutate]
+  );
 
-  const toggleTodo = useCallback((categoryId: string, todoId: string) => {
-    setCategories(prev => prev.map(c =>
-      c.id === categoryId
-        ? { ...c, todos: c.todos.map(t => t.id === todoId ? { ...t, completed: !t.completed } : t) }
-        : c
-    ));
-  }, []);
+  // ── Todo actions ──
+  const handleAddTodo = useCallback(
+    (categoryId: string, title: string) =>
+      mutate(
+        () => {
+          const tempId = 'temp-' + Date.now();
+          const todo: Todo = {
+            id: tempId,
+            categoryId,
+            title,
+            completed: false,
+            orderIndex: Date.now(),
+            completedAt: null,
+            records: [],
+          };
+          setCategories(prev =>
+            prev.map(c => (c.id === categoryId ? { ...c, todos: [...c.todos, todo] } : c))
+          );
+        },
+        apiAddTodo(categoryId, title, user!.id)
+      ),
+    [mutate, user]
+  );
 
-  const deleteTodo = useCallback((categoryId: string, todoId: string) => {
-    setCategories(prev => prev.map(c =>
-      c.id === categoryId ? { ...c, todos: c.todos.filter(t => t.id !== todoId) } : c
-    ));
-  }, []);
+  const handleToggleTodo = useCallback(
+    (categoryId: string, todoId: string) => {
+      const category = categories.find(c => c.id === categoryId);
+      const todo = category?.todos.find(t => t.id === todoId);
+      if (!todo) return;
 
-  const updateTodoRecord = useCallback((categoryId: string, todoId: string, record: string) => {
-    setCategories(prev => prev.map(c =>
-      c.id === categoryId
-        ? { ...c, todos: c.todos.map(t => t.id === todoId ? { ...t, record } : t) }
-        : c
-    ));
-  }, []);
+      mutate(
+        () =>
+          setCategories(prev =>
+            prev.map(c =>
+              c.id === categoryId
+                ? {
+                    ...c,
+                    todos: c.todos.map(t =>
+                      t.id === todoId
+                        ? {
+                            ...t,
+                            completed: !t.completed,
+                            completedAt: !t.completed ? new Date().toISOString() : null,
+                          }
+                        : t
+                    ),
+                  }
+                : c
+            )
+          ),
+        apiToggleTodo(categoryId, todoId, todo.completed)
+      );
+    },
+    [categories, mutate]
+  );
 
-  const updateTodoText = useCallback((categoryId: string, todoId: string, text: string) => {
-    setCategories(prev => prev.map(c =>
-      c.id === categoryId
-        ? { ...c, todos: c.todos.map(t => t.id === todoId ? { ...t, text } : t) }
-        : c
-    ));
-  }, []);
+  const handleDeleteTodo = useCallback(
+    (categoryId: string, todoId: string) =>
+      mutate(
+        () =>
+          setCategories(prev =>
+            prev.map(c =>
+              c.id === categoryId ? { ...c, todos: c.todos.filter(t => t.id !== todoId) } : c
+            )
+          ),
+        apiDeleteTodo(categoryId, todoId)
+      ),
+    [mutate]
+  );
+
+  // ── Record actions ──
+  const handleAddRecord = useCallback(
+    (categoryId: string, todoId: string, content: string) =>
+      mutate(
+        () => {
+          const tempId = 'temp-' + Date.now();
+          const record: Record = {
+            id: tempId,
+            categoryId,
+            todoId,
+            content,
+            collapsed: false,
+            createdAt: new Date().toISOString(),
+          };
+          setCategories(prev =>
+            prev.map(c =>
+              c.id === categoryId
+                ? {
+                    ...c,
+                    todos: c.todos.map(t =>
+                      t.id === todoId ? { ...t, records: [...t.records, record] } : t
+                    ),
+                  }
+                : c
+            )
+          );
+        },
+        apiAddRecord(categoryId, todoId, content, user!.id)
+      ),
+    [mutate, user]
+  );
+
+  const handleUpdateRecord = useCallback(
+    (recordId: string, content: string) =>
+      mutate(
+        () =>
+          setCategories(prev =>
+            prev.map(c => ({
+              ...c,
+              todos: c.todos.map(t => ({
+                ...t,
+                records: t.records.map(r => (r.id === recordId ? { ...r, content } : r)),
+              })),
+            }))
+          ),
+        apiUpdateRecord(recordId, content)
+      ),
+    [mutate]
+  );
+
+  const handleToggleRecordCollapsed = useCallback(
+    (recordId: string, collapsed: boolean) =>
+      mutate(
+        () =>
+          setCategories(prev =>
+            prev.map(c => ({
+              ...c,
+              todos: c.todos.map(t => ({
+                ...t,
+                records: t.records.map(r => (r.id === recordId ? { ...r, collapsed } : r)),
+              })),
+            }))
+          ),
+        apiToggleRecordCollapsed(recordId, collapsed)
+      ),
+    [mutate]
+  );
+
+  const handleDeleteRecord = useCallback(
+    (recordId: string) =>
+      mutate(
+        () =>
+          setCategories(prev =>
+            prev.map(c => ({
+              ...c,
+              todos: c.todos.map(t => ({
+                ...t,
+                records: t.records.filter(r => r.id !== recordId),
+              })),
+            }))
+          ),
+        apiDeleteRecord(recordId)
+      ),
+    [mutate]
+  );
 
   return (
-    <AppContext.Provider value={{
-      categories,
-      addCategory,
-      deleteCategory,
-      updateCategoryRecord,
-      addTodo,
-      toggleTodo,
-      deleteTodo,
-      updateTodoRecord,
-      updateTodoText,
-    }}>
+    <AppContext.Provider
+      value={{
+        user,
+        authLoading,
+        signOut: handleSignOut,
+        categories,
+        dataLoading,
+        error,
+        addCategory: handleAddCategory,
+        deleteCategory: handleDeleteCategory,
+        addTodo: handleAddTodo,
+        toggleTodo: handleToggleTodo,
+        deleteTodo: handleDeleteTodo,
+        addRecord: handleAddRecord,
+        updateRecord: handleUpdateRecord,
+        toggleRecordCollapsed: handleToggleRecordCollapsed,
+        deleteRecord: handleDeleteRecord,
+      }}
+    >
       {children}
     </AppContext.Provider>
   );

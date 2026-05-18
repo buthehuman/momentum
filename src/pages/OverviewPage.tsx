@@ -29,23 +29,26 @@ function TodoItem({
         {todo.completed && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
       </button>
 
-      {/* Text */}
+      {/* Title */}
       <span
         className={`flex-1 text-sm cursor-pointer select-none ${
           todo.completed ? 'line-through text-gray-400' : 'text-gray-700'
         }`}
         onClick={onNavigate}
       >
-        {todo.text}
+        {todo.title}
       </span>
 
-      {/* Record icon */}
-      <button
-        onClick={onNavigate}
-        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-100"
-      >
-        <FileText className="w-3.5 h-3.5 text-gray-400" strokeWidth={1.5} />
-      </button>
+      {/* Record count indicator */}
+      {todo.records.length > 0 && (
+        <span
+          onClick={onNavigate}
+          className="text-xs text-gray-300 flex items-center gap-0.5"
+        >
+          <FileText className="w-3 h-3" strokeWidth={1.5} />
+          {todo.records.length}
+        </span>
+      )}
     </div>
   );
 }
@@ -55,16 +58,16 @@ function CategoryCard({ category }: { category: Category }) {
   const { toggleTodo, addTodo, deleteCategory } = useApp();
   const [completedOpen, setCompletedOpen] = useState(false);
   const [addingTodo, setAddingTodo] = useState(false);
-  const [newTodoText, setNewTodoText] = useState('');
+  const [newTodoTitle, setNewTodoTitle] = useState('');
   const [showMenu, setShowMenu] = useState(false);
 
   const activeTodos = category.todos.filter(t => !t.completed);
   const completedTodos = category.todos.filter(t => t.completed);
 
   const handleAddTodo = () => {
-    if (newTodoText.trim()) {
-      addTodo(category.id, newTodoText.trim());
-      setNewTodoText('');
+    if (newTodoTitle.trim()) {
+      addTodo(category.id, newTodoTitle.trim());
+      setNewTodoTitle('');
       setAddingTodo(false);
     }
   };
@@ -73,7 +76,7 @@ function CategoryCard({ category }: { category: Category }) {
     if (e.key === 'Enter') handleAddTodo();
     if (e.key === 'Escape') {
       setAddingTodo(false);
-      setNewTodoText('');
+      setNewTodoTitle('');
     }
   };
 
@@ -82,7 +85,7 @@ function CategoryCard({ category }: { category: Category }) {
       {/* Category Header */}
       <div className="flex items-center justify-between mb-2 group">
         <button
-          onClick={() => navigate(`/record/${category.slug}`)}
+          onClick={() => navigate(`/record/${category.id}`)}
           className="flex items-center gap-1.5 hover:opacity-70 transition-opacity"
         >
           <h2 className="text-lg font-semibold text-gray-900">{category.name}</h2>
@@ -99,7 +102,7 @@ function CategoryCard({ category }: { category: Category }) {
           {showMenu && (
             <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-100 rounded-lg shadow-lg z-10 py-1">
               <button
-                onClick={() => { navigate(`/record/${category.slug}`); setShowMenu(false); }}
+                onClick={() => { navigate(`/record/${category.id}`); setShowMenu(false); }}
                 className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
               >
                 <AlignLeft className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -132,7 +135,7 @@ function CategoryCard({ category }: { category: Category }) {
             todo={todo}
             category={category}
             onToggle={() => toggleTodo(category.id, todo.id)}
-            onNavigate={() => navigate(`/record/${category.slug}#${todo.id}`)}
+            onNavigate={() => navigate(`/record/${category.id}#${todo.id}`)}
           />
         ))}
 
@@ -143,10 +146,10 @@ function CategoryCard({ category }: { category: Category }) {
             <input
               autoFocus
               type="text"
-              value={newTodoText}
-              onChange={e => setNewTodoText(e.target.value)}
+              value={newTodoTitle}
+              onChange={e => setNewTodoTitle(e.target.value)}
               onKeyDown={handleKeyDown}
-              onBlur={() => { if (!newTodoText.trim()) setAddingTodo(false); }}
+              onBlur={() => { if (!newTodoTitle.trim()) setAddingTodo(false); }}
               placeholder="New todo..."
               className="flex-1 text-sm text-gray-700 outline-none bg-transparent placeholder-gray-300"
             />
@@ -188,7 +191,7 @@ function CategoryCard({ category }: { category: Category }) {
                   todo={todo}
                   category={category}
                   onToggle={() => toggleTodo(category.id, todo.id)}
-                  onNavigate={() => navigate(`/record/${category.slug}#${todo.id}`)}
+                  onNavigate={() => navigate(`/record/${category.id}#${todo.id}`)}
                 />
               ))}
             </div>
