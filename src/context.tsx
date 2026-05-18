@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { Category, Todo } from './types';
+import type { Category, Todo } from './types';
 import { loadData, saveData } from './store';
 
 interface AppContextValue {

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, ChevronUp, Search, MoreHorizontal, Check } from 'lucide-react';
 import { useApp } from '../context';
-import { Todo } from '../types';
+import type { Todo } from '../types';
 
 function AutoResizeTextarea({
   value,

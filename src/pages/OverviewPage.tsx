@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, ChevronDown, ChevronRight, MoreHorizontal, FileText, Check, AlignLeft } from 'lucide-react';
 import { useApp } from '../context';
-import { Category, Todo } from '../types';
+import type { Category, Todo } from '../types';
 
 function TodoItem({
   todo,
