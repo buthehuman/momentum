@@ -10,6 +10,7 @@ import {
   toggleTodo as apiToggleTodo,
   deleteTodo as apiDeleteTodo,
   addRecord as apiAddRecord,
+  addCategoryRecord as apiAddCategoryRecord,
   updateRecord as apiUpdateRecord,
   toggleRecordCollapsed as apiToggleRecordCollapsed,
   deleteRecord as apiDeleteRecord,
@@ -36,6 +37,7 @@ interface AppContextValue {
   deleteTodo: (categoryId: string, todoId: string) => void;
 
   // Record actions
+  addCategoryRecord: (categoryId: string, content: string) => void;
   addRecord: (categoryId: string, todoId: string, content: string) => void;
   updateRecord: (recordId: string, content: string) => void;
   toggleRecordCollapsed: (recordId: string, collapsed: boolean) => void;
@@ -118,7 +120,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       mutate(
         () => {
           const tempId = 'temp-' + Date.now();
-          setCategories(prev => [...prev, { id: tempId, name, todos: [] }]);
+          setCategories(prev => [...prev, { id: tempId, name, todos: [], categoryRecords: [] }]);
         },
         apiAddCategory(name, user!.id)
       ),
@@ -170,11 +172,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                     ...c,
                     todos: c.todos.map(t =>
                       t.id === todoId
-                        ? {
-                            ...t,
-                            completed: !t.completed,
-                            completedAt: !t.completed ? new Date().toISOString() : null,
-                          }
+                        ? { ...t, completed: !t.completed, completedAt: !t.completed ? new Date().toISOString() : null }
                         : t
                     ),
                   }
@@ -192,16 +190,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       mutate(
         () =>
           setCategories(prev =>
-            prev.map(c =>
-              c.id === categoryId ? { ...c, todos: c.todos.filter(t => t.id !== todoId) } : c
-            )
+            prev.map(c => (c.id === categoryId ? { ...c, todos: c.todos.filter(t => t.id !== todoId) } : c))
           ),
         apiDeleteTodo(categoryId, todoId)
       ),
     [mutate]
   );
 
-  // ── Record actions ──
+  // ── Category-level record action ──
+  const handleAddCategoryRecord = useCallback(
+    (categoryId: string, content: string) =>
+      mutate(
+        () => {
+          const tempId = 'temp-' + Date.now();
+          const record: Record = {
+            id: tempId,
+            categoryId,
+            todoId: null,
+            content,
+            collapsed: false,
+            createdAt: new Date().toISOString(),
+          };
+          setCategories(prev =>
+            prev.map(c =>
+              c.id === categoryId ? { ...c, categoryRecords: [...c.categoryRecords, record] } : c
+            )
+          );
+        },
+        apiAddCategoryRecord(categoryId, content, user!.id)
+      ),
+    [mutate, user]
+  );
+
+  // ── Todo-level record actions ──
   const handleAddRecord = useCallback(
     (categoryId: string, todoId: string, content: string) =>
       mutate(
@@ -218,12 +239,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCategories(prev =>
             prev.map(c =>
               c.id === categoryId
-                ? {
-                    ...c,
-                    todos: c.todos.map(t =>
-                      t.id === todoId ? { ...t, records: [...t.records, record] } : t
-                    ),
-                  }
+                ? { ...c, todos: c.todos.map(t => t.id === todoId ? { ...t, records: [...t.records, record] } : t) }
                 : c
             )
           );
@@ -240,6 +256,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCategories(prev =>
             prev.map(c => ({
               ...c,
+              categoryRecords: c.categoryRecords.map(r => (r.id === recordId ? { ...r, content } : r)),
               todos: c.todos.map(t => ({
                 ...t,
                 records: t.records.map(r => (r.id === recordId ? { ...r, content } : r)),
@@ -258,6 +275,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCategories(prev =>
             prev.map(c => ({
               ...c,
+              categoryRecords: c.categoryRecords.map(r => (r.id === recordId ? { ...r, collapsed } : r)),
               todos: c.todos.map(t => ({
                 ...t,
                 records: t.records.map(r => (r.id === recordId ? { ...r, collapsed } : r)),
@@ -276,10 +294,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCategories(prev =>
             prev.map(c => ({
               ...c,
-              todos: c.todos.map(t => ({
-                ...t,
-                records: t.records.filter(r => r.id !== recordId),
-              })),
+              categoryRecords: c.categoryRecords.filter(r => r.id !== recordId),
+              todos: c.todos.map(t => ({ ...t, records: t.records.filter(r => r.id !== recordId) })),
             }))
           ),
         apiDeleteRecord(recordId)
@@ -301,6 +317,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addTodo: handleAddTodo,
         toggleTodo: handleToggleTodo,
         deleteTodo: handleDeleteTodo,
+        addCategoryRecord: handleAddCategoryRecord,
         addRecord: handleAddRecord,
         updateRecord: handleUpdateRecord,
         toggleRecordCollapsed: handleToggleRecordCollapsed,

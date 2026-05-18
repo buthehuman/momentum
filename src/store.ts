@@ -7,14 +7,14 @@ function supabaseRecordToApp(r: SupabaseRecord): Record {
   return {
     id: r.id,
     categoryId: r.category_id,
-    todoId: r.todo_id,
+    todoId: r.todo_id ?? null,
     content: r.content,
     collapsed: r.collapsed,
     createdAt: r.created_at,
   };
 }
 
-function supabaseTodoToApp(t: SupabaseTodo, records: Record[]): Todo {
+function supabaseTodoToApp(t: SupabaseTodo, todoRecords: Record[]): Todo {
   return {
     id: t.id,
     categoryId: t.category_id,
@@ -22,15 +22,16 @@ function supabaseTodoToApp(t: SupabaseTodo, records: Record[]): Todo {
     completed: t.completed,
     orderIndex: t.order_index,
     completedAt: t.completed_at,
-    records,
+    records: todoRecords,
   };
 }
 
-function supabaseCategoryToApp(c: SupabaseCategory, todos: Todo[]): Category {
+function supabaseCategoryToApp(c: SupabaseCategory, todos: Todo[], catRecords: Record[]): Category {
   return {
     id: c.id,
     name: c.name,
     todos,
+    categoryRecords: catRecords,
   };
 }
 
@@ -47,24 +48,38 @@ export async function fetchAllCategories(): Promise<Category[]> {
   if (todosRes.error) throw todosRes.error;
   if (recordsRes.error) throw recordsRes.error;
 
-  // Group records by todo_id
-  const recordMap = new Map<string, Record[]>();
-  for (const r of recordsRes.data as SupabaseRecord[]) {
-    const appRecord = supabaseRecordToApp(r);
-    if (!recordMap.has(r.todo_id)) recordMap.set(r.todo_id, []);
-    recordMap.get(r.todo_id)!.push(appRecord);
+  const allRecords = (recordsRes.data as SupabaseRecord[]).map(supabaseRecordToApp);
+
+  // Split records: category-level (todo_id is null) vs todo-level
+  const categoryRecordMap = new Map<string, Record[]>(); // categoryId → category records
+  const todoRecordMap = new Map<string, Record[]>();     // todoId → todo records
+
+  for (const r of allRecords) {
+    if (!r.todoId) {
+      // Category-level record
+      if (!categoryRecordMap.has(r.categoryId)) categoryRecordMap.set(r.categoryId, []);
+      categoryRecordMap.get(r.categoryId)!.push(r);
+    } else {
+      // Todo-level record
+      if (!todoRecordMap.has(r.todoId)) todoRecordMap.set(r.todoId, []);
+      todoRecordMap.get(r.todoId)!.push(r);
+    }
   }
 
   // Group todos by category_id
   const todoMap = new Map<string, Todo[]>();
   for (const t of todosRes.data as SupabaseTodo[]) {
-    const appTodo = supabaseTodoToApp(t, recordMap.get(t.id) || []);
+    const appTodo = supabaseTodoToApp(t, todoRecordMap.get(t.id) || []);
     if (!todoMap.has(t.category_id)) todoMap.set(t.category_id, []);
     todoMap.get(t.category_id)!.push(appTodo);
   }
 
   return (catsRes.data as SupabaseCategory[]).map(c =>
-    supabaseCategoryToApp(c, todoMap.get(c.id) || [])
+    supabaseCategoryToApp(
+      c,
+      todoMap.get(c.id) || [],
+      categoryRecordMap.get(c.id) || []
+    )
   );
 }
 
@@ -84,14 +99,15 @@ export async function deleteCategory(id: string): Promise<void> {
 
 export async function addTodo(categoryId: string, title: string, userId: string): Promise<void> {
   // Get max order_index for this category
-  const { data: todos } = await supabase
+  const { data: existingTodos } = await supabase
     .from('todos')
     .select('order_index')
     .eq('category_id', categoryId)
     .order('order_index', { ascending: false })
     .limit(1);
 
-  const nextOrderIndex = (todos && todos.length > 0 ? todos[0].order_index : -1) + 1;
+  const nextOrderIndex =
+    existingTodos && existingTodos.length > 0 ? existingTodos[0].order_index + 1 : 0;
 
   const { error } = await supabase.from('todos').insert({
     category_id: categoryId,
@@ -104,7 +120,7 @@ export async function addTodo(categoryId: string, title: string, userId: string)
 }
 
 export async function toggleTodo(
-  categoryId: string,
+  _categoryId: string,
   todoId: string,
   currentCompleted: boolean
 ): Promise<void> {
@@ -118,12 +134,31 @@ export async function toggleTodo(
   if (error) throw error;
 }
 
-export async function deleteTodo(categoryId: string, todoId: string): Promise<void> {
+export async function deleteTodo(_categoryId: string, todoId: string): Promise<void> {
   // Records cascade delete via FK
   const { error } = await supabase.from('todos').delete().eq('id', todoId);
   if (error) throw error;
 }
 
+// ── Category-level record CRUD ──
+
+/** Add a record that belongs to a category (todo_id is NULL) */
+export async function addCategoryRecord(
+  categoryId: string,
+  content: string,
+  userId: string
+): Promise<void> {
+  const { error } = await supabase.from('records').insert({
+    category_id: categoryId,
+    todo_id: null,
+    content,
+    collapsed: false,
+    user_id: userId,
+  });
+  if (error) throw error;
+}
+
+/** Add a record that belongs to a specific todo */
 export async function addRecord(
   categoryId: string,
   todoId: string,
@@ -140,16 +175,19 @@ export async function addRecord(
   if (error) throw error;
 }
 
+/** Update a category-level record's content */
 export async function updateRecord(id: string, content: string): Promise<void> {
   const { error } = await supabase.from('records').update({ content }).eq('id', id);
   if (error) throw error;
 }
 
+/** Toggle collapsed state of any record */
 export async function toggleRecordCollapsed(id: string, collapsed: boolean): Promise<void> {
   const { error } = await supabase.from('records').update({ collapsed }).eq('id', id);
   if (error) throw error;
 }
 
+/** Delete any record */
 export async function deleteRecord(id: string): Promise<void> {
   const { error } = await supabase.from('records').delete().eq('id', id);
   if (error) throw error;

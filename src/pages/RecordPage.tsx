@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, ChevronUp, Plus, Trash2, Check } from 'lucide-react';
 import { useApp } from '../context';
-import type { Todo, Record } from '../types';
+import type { Record as RecordType, Todo } from '../types';
 
 function AutoResizeTextarea({
   value,
@@ -45,79 +45,188 @@ function AutoResizeTextarea({
   );
 }
 
-function RecordItem({
+// ── Category-level record item ──
+
+function CategoryRecordItem({
   record,
-  onToggleCollapsed,
   onUpdateContent,
   onDelete,
 }: {
-  record: Record;
-  onToggleCollapsed: () => void;
+  record: RecordType;
   onUpdateContent: (content: string) => void;
   onDelete: () => void;
 }) {
   const [content, setContent] = useState(record.content);
-  const [editing, setEditing] = useState(false);
 
   const handleBlur = () => {
-    setEditing(false);
     if (content !== record.content) {
       onUpdateContent(content);
     }
   };
 
   return (
-    <div className="group/record">
-      {/* Record header */}
-      <div className="flex items-center gap-2 py-2">
+    <div className="group/cat-record relative">
+      <AutoResizeTextarea
+        value={content}
+        onChange={v => setContent(v)}
+        onBlur={handleBlur}
+        placeholder="Write your thoughts..."
+        className="min-h-[60px]"
+      />
+      <button
+        onClick={onDelete}
+        className="absolute top-2 right-2 opacity-0 group-hover/cat-record:opacity-100 transition-opacity p-1 rounded hover:bg-red-50"
+      >
+        <Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400" strokeWidth={1.5} />
+      </button>
+      <div className="border-b border-gray-50 mt-2" />
+    </div>
+  );
+}
+
+// ── Category Reflection Section ──
+
+function CategoryReflectionSection({ categoryId }: { categoryId: string }) {
+  const { addCategoryRecord, updateRecord, deleteRecord } = useApp();
+  const { categories } = useApp();
+
+  const category = categories.find(c => c.id === categoryId);
+  const records = category?.categoryRecords ?? [];
+  const [adding, setAdding] = useState(false);
+  const [newContent, setNewContent] = useState('');
+
+  // Show the latest record's content in the main textarea
+  const latestRecord = records.length > 0 ? records[records.length - 1] : null;
+
+  const handleAdd = () => {
+    if (newContent.trim()) {
+      addCategoryRecord(categoryId, newContent.trim());
+      setNewContent('');
+      setAdding(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleAdd();
+    }
+    if (e.key === 'Escape') {
+      setAdding(false);
+      setNewContent('');
+    }
+  };
+
+  return (
+    <div className="mb-10">
+      <p className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-3">
+        Category Reflection
+      </p>
+      <div className="border border-gray-100 rounded-xl p-4 bg-white hover:border-gray-200 transition-colors">
+        {/* Existing records */}
+        {records.map(record => (
+          <CategoryRecordItem
+            key={record.id}
+            record={record}
+            onUpdateContent={(content) => updateRecord(record.id, content)}
+            onDelete={() => deleteRecord(record.id)}
+          />
+        ))}
+
+        {/* Add new record input */}
+        {adding && (
+          <div className="mt-1">
+            <AutoResizeTextarea
+              value={newContent}
+              onChange={v => setNewContent(v)}
+              onKeyDown={handleKeyDown}
+              onBlur={() => {
+                if (!newContent.trim()) setAdding(false);
+              }}
+              placeholder="Write a reflection... (Enter to save, Esc to cancel)"
+              autoFocus
+              className="min-h-[60px]"
+            />
+          </div>
+        )}
+
+        {/* Add button */}
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 mt-1 text-gray-300 hover:text-gray-400 transition-colors text-sm py-1"
+          >
+            <Plus className="w-3.5 h-3.5" strokeWidth={1.5} />
+            Add reflection
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Todo-level record item ──
+
+function TodoRecordItem({
+  record,
+  onToggleCollapsed,
+  onUpdateContent,
+  onDelete,
+}: {
+  record: RecordType;
+  onToggleCollapsed: () => void;
+  onUpdateContent: (content: string) => void;
+  onDelete: () => void;
+}) {
+  const [content, setContent] = useState(record.content);
+
+  const handleBlur = () => {
+    if (content !== record.content) {
+      onUpdateContent(content);
+    }
+  };
+
+  return (
+    <div className="group/todo-record">
+      {/* Header with collapse + delete */}
+      <div className="flex items-center gap-2 py-1">
         <button
           onClick={onToggleCollapsed}
-          className="opacity-0 group-hover/record:opacity-100 transition-opacity"
+          className="opacity-0 group-hover/todo-record:opacity-100 transition-opacity"
         >
           {record.collapsed ? (
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400" strokeWidth={1.5} />
+            <ChevronDown className="w-3 h-3 text-gray-400" strokeWidth={1.5} />
           ) : (
-            <ChevronUp className="w-3.5 h-3.5 text-gray-400" strokeWidth={1.5} />
+            <ChevronUp className="w-3 h-3 text-gray-400" strokeWidth={1.5} />
           )}
         </button>
-        <span className="flex-1 text-xs text-gray-300">
+        <span className="text-xs text-gray-300 flex-1">
           {new Date(record.createdAt).toLocaleDateString()}
         </span>
         <button
           onClick={onDelete}
-          className="opacity-0 group-hover/record:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-50"
+          className="opacity-0 group-hover/todo-record:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-50"
         >
           <Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400" strokeWidth={1.5} />
         </button>
       </div>
 
-      {/* Record content */}
       {!record.collapsed && (
-        <div
-          className="pb-3"
-          onClick={() => setEditing(true)}
-        >
-          <AutoResizeTextarea
-            value={editing ? content : record.content}
-            onChange={v => setContent(v)}
-            onBlur={handleBlur}
-            placeholder="Write a record..."
-          />
-        </div>
+        <AutoResizeTextarea
+          value={content}
+          onChange={v => setContent(v)}
+          onBlur={handleBlur}
+          placeholder="Write a record..."
+          className="min-h-[60px] pl-4 pb-2"
+        />
       )}
     </div>
   );
 }
 
-function TodoRecordSection({
-  todo,
-  categoryId,
-  isHighlighted,
-}: {
-  todo: Todo;
-  categoryId: string;
-  isHighlighted: boolean;
-}) {
+// ── Todo Record Section (per todo) ──
+
+function TodoRecordSection({ todo, categoryId, isHighlighted }: { todo: Todo; categoryId: string; isHighlighted: boolean }) {
   const { toggleTodo, addRecord, toggleRecordCollapsed, updateRecord, deleteRecord } = useApp();
   const sectionRef = useRef<HTMLDivElement>(null);
   const [addingRecord, setAddingRecord] = useState(false);
@@ -158,28 +267,19 @@ function TodoRecordSection({
     >
       {/* Todo Header */}
       <div className="flex items-center gap-2 px-4 py-3 group">
-        {/* Checkbox */}
         <button
           onClick={() => toggleTodo(categoryId, todo.id)}
           className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center transition-colors ${
-            todo.completed
-              ? 'bg-gray-900 border-gray-900'
-              : 'border-gray-300 hover:border-gray-400'
+            todo.completed ? 'bg-gray-900 border-gray-900' : 'border-gray-300 hover:border-gray-400'
           }`}
         >
           {todo.completed && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
         </button>
 
-        {/* Title */}
-        <h3
-          className={`flex-1 text-sm font-medium cursor-default ${
-            todo.completed ? 'line-through text-gray-400' : 'text-gray-800'
-          }`}
-        >
+        <h3 className={`flex-1 text-sm font-medium cursor-default ${todo.completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
           {todo.title}
         </h3>
 
-        {/* Add record button */}
         <button
           onClick={() => setAddingRecord(true)}
           className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-100"
@@ -189,10 +289,10 @@ function TodoRecordSection({
         </button>
       </div>
 
-      {/* Records list */}
+      {/* Records list for this todo */}
       <div className="px-4 pb-2">
-        {todo.records.map(record => (
-          <RecordItem
+        {todo.records.map((record, idx) => (
+          <TodoRecordItem
             key={record.id}
             record={record}
             onToggleCollapsed={() => toggleRecordCollapsed(record.id, !record.collapsed)}
@@ -217,20 +317,27 @@ function TodoRecordSection({
               }}
               placeholder="Write a record... (Enter to save, Esc to cancel)"
               autoFocus
+              className="min-h-[60px]"
             />
           </div>
         )}
 
         {!addingRecord && todo.records.length === 0 && (
-          <p className="text-xs text-gray-200 pb-2">No records yet.</p>
+          <button
+            onClick={() => setAddingRecord(true)}
+            className="text-xs text-gray-200 pb-2 hover:text-gray-300 transition-colors"
+          >
+            No records yet. Click to add one.
+          </button>
         )}
       </div>
 
-      {/* Divider */}
       <div className="border-b border-gray-100 mx-4" />
     </div>
   );
 }
+
+// ── Main Record Page ──
 
 export default function RecordPage() {
   const { categoryId } = useParams<{ categoryId: string }>();
@@ -279,17 +386,20 @@ export default function RecordPage() {
         {/* Category Title */}
         <h1 className="text-3xl font-semibold text-gray-900 mb-8">{category.name}</h1>
 
+        {/* Category Reflection Section */}
+        <CategoryReflectionSection categoryId={categoryId} />
+
         {/* Todos Section */}
         <div>
           <p className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-4">
             Todos
           </p>
 
-          {/* Active Todos */}
           {activeTodos.length === 0 && completedTodos.length === 0 && (
             <p className="text-sm text-gray-300 py-4">No todos yet. Add some from the overview.</p>
           )}
 
+          {/* Active Todos */}
           {activeTodos.map(todo => (
             <TodoRecordSection
               key={todo.id}
