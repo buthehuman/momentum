@@ -22,6 +22,7 @@ export interface Todo {
 export interface Category {
   id: string;
   name: string;
+  orderIndex: number;
   todos: Todo[];
   categoryRecords: Record[]; // records where todo_id IS NULL
 }

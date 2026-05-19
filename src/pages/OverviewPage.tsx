@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, ChevronDown, ChevronRight, MoreHorizontal, FileText, Check, AlignLeft } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, MoreHorizontal, FileText, Check, AlignLeft, Trash2, GripVertical } from 'lucide-react';
+import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useApp } from '../context';
 import type { Category, Todo } from '../types';
 
@@ -9,14 +12,58 @@ function TodoItem({
   category,
   onToggle,
   onNavigate,
+  onUpdateTitle,
+  onDelete,
 }: {
   todo: Todo;
   category: Category;
   onToggle: () => void;
   onNavigate: () => void;
+  onUpdateTitle: (title: string) => void;
+  onDelete: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(todo.title);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const handleSave = () => {
+    const trimmed = editTitle.trim();
+    if (trimmed && trimmed !== todo.title) {
+      onUpdateTitle(trimmed);
+    }
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      setEditTitle(todo.title);
+      setEditing(false);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 group rounded-md hover:bg-gray-50 transition-colors">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 px-3 py-1.5 group rounded-md hover:bg-gray-50 transition-colors ${isDragging ? 'opacity-50' : ''}`}
+    >
+      {/* Drag handle */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-100"
+        title="Drag to reorder"
+      >
+        <GripVertical className="w-3 h-3 text-gray-300 hover:text-gray-500" strokeWidth={1.5} />
+      </div>
+
       {/* Checkbox */}
       <button
         onClick={onToggle}
@@ -29,40 +76,102 @@ function TodoItem({
         {todo.completed && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
       </button>
 
-      {/* Title */}
-      <span
-        className={`flex-1 text-sm cursor-pointer select-none ${
-          todo.completed ? 'line-through text-gray-400' : 'text-gray-700'
-        }`}
-        onClick={onNavigate}
-      >
-        {todo.title}
-      </span>
+      {/* Title (editable) */}
+      {editing ? (
+        <input
+          autoFocus
+          type="text"
+          value={editTitle}
+          onChange={e => setEditTitle(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleSave}
+          className={`flex-1 text-sm outline-none bg-transparent ${
+            todo.completed ? 'line-through text-gray-400' : 'text-gray-700'
+          }`}
+        />
+      ) : (
+        <span
+          className={`flex-1 text-sm cursor-pointer select-none ${
+            todo.completed ? 'line-through text-gray-400' : 'text-gray-700'
+          }`}
+          onClick={onNavigate}
+        >
+          {todo.title}
+        </span>
+      )}
 
       {/* Record count indicator */}
       {todo.records.length > 0 && (
         <span
           onClick={onNavigate}
-          className="text-xs text-gray-300 flex items-center gap-0.5"
+          className="text-xs text-gray-300 flex items-center gap-0.5 cursor-pointer"
         >
           <FileText className="w-3 h-3" strokeWidth={1.5} />
           {todo.records.length}
         </span>
       )}
+
+      {/* Edit button — hover */}
+      {!editing && (
+        <button
+          onClick={() => { setEditTitle(todo.title); setEditing(true); }}
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-100"
+          title="Edit todo"
+        >
+          <AlignLeft className="w-3 h-3 text-gray-300 hover:text-gray-500" strokeWidth={1.5} />
+        </button>
+      )}
+
+      {/* Delete button — hover */}
+      <button
+        onClick={onDelete}
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-50"
+        title="Delete todo"
+      >
+        <Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400" strokeWidth={1.5} />
+      </button>
     </div>
   );
 }
 
-function CategoryCard({ category }: { category: Category }) {
+function CategoryCard({ category, onReorderTodos }: { category: Category; onReorderTodos: (categoryId: string, todoIds: string[]) => void }) {
   const navigate = useNavigate();
-  const { toggleTodo, addTodo, deleteCategory } = useApp();
+  const { toggleTodo, addTodo, updateTodo, deleteTodo, updateCategory, deleteCategory } = useApp();
   const [completedOpen, setCompletedOpen] = useState(false);
   const [addingTodo, setAddingTodo] = useState(false);
   const [newTodoTitle, setNewTodoTitle] = useState('');
   const [showMenu, setShowMenu] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editName, setEditName] = useState(category.name);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id });
+
+  const catStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   const activeTodos = category.todos.filter(t => !t.completed);
   const completedTodos = category.todos.filter(t => t.completed);
+
+  const handleTodoDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = activeTodos.findIndex(t => t.id === active.id);
+    const newIndex = activeTodos.findIndex(t => t.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newOrder = arrayMove(activeTodos, oldIndex, newIndex);
+    onReorderTodos(category.id, newOrder.map(t => t.id));
+  };
 
   const handleAddTodo = () => {
     if (newTodoTitle.trim()) {
@@ -81,18 +190,57 @@ function CategoryCard({ category }: { category: Category }) {
   };
 
   return (
-    <div className="mb-8">
+    <div ref={setNodeRef} style={catStyle} className={`mb-8 ${isDragging ? 'opacity-50' : ''}`}>
       {/* Category Header */}
       <div className="flex items-center justify-between mb-2 group">
-        <button
-          onClick={() => navigate(`/record/${category.id}`)}
-          className="flex items-center gap-1.5 hover:opacity-70 transition-opacity"
-        >
-          <h2 className="text-lg font-semibold text-gray-900">{category.name}</h2>
-          <ChevronRight className="w-4 h-4 text-gray-400" strokeWidth={1.5} />
-        </button>
+        <div className="flex items-center flex-1 min-w-0">
+          {/* Category drag handle */}
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-100 mr-1 flex-shrink-0"
+            title="Drag to reorder category"
+          >
+            <GripVertical className="w-4 h-4 text-gray-300 hover:text-gray-500" strokeWidth={1.5} />
+          </div>
 
-        <div className="relative">
+          {editingTitle ? (
+            <input
+              autoFocus
+              type="text"
+              value={editName}
+              onChange={e => setEditName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  if (editName.trim()) {
+                    updateCategory(category.id, editName.trim());
+                  }
+                  setEditingTitle(false);
+                } else if (e.key === 'Escape') {
+                  setEditName(category.name);
+                  setEditingTitle(false);
+                }
+              }}
+              onBlur={() => {
+                if (editName.trim() && editName.trim() !== category.name) {
+                  updateCategory(category.id, editName.trim());
+                }
+                setEditingTitle(false);
+              }}
+              className="flex-1 text-lg font-semibold text-gray-900 outline-none bg-transparent"
+            />
+          ) : (
+            <button
+              onClick={() => navigate(`/record/${category.id}`)}
+              className="flex items-center gap-1.5 hover:opacity-70 transition-opacity min-w-0"
+            >
+              <h2 className="text-lg font-semibold text-gray-900">{category.name}</h2>
+              <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" strokeWidth={1.5} />
+            </button>
+          )}
+        </div>
+
+        <div className="relative flex-shrink-0 ml-2">
           <button
             onClick={() => setShowMenu(!showMenu)}
             className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-100 transition-all"
@@ -102,10 +250,17 @@ function CategoryCard({ category }: { category: Category }) {
           {showMenu && (
             <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-100 rounded-lg shadow-lg z-10 py-1">
               <button
-                onClick={() => { navigate(`/record/${category.id}`); setShowMenu(false); }}
+                onClick={() => { setEditingTitle(true); setEditName(category.name); setShowMenu(false); }}
                 className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
               >
                 <AlignLeft className="w-3.5 h-3.5" strokeWidth={1.5} />
+                Edit Category
+              </button>
+              <button
+                onClick={() => { navigate(`/record/${category.id}`); setShowMenu(false); }}
+                className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+              >
+                <FileText className="w-3.5 h-3.5" strokeWidth={1.5} />
                 View Records
               </button>
               <button
@@ -129,15 +284,21 @@ function CategoryCard({ category }: { category: Category }) {
 
       {/* Active Todos */}
       <div className="space-y-0">
-        {activeTodos.map(todo => (
-          <TodoItem
-            key={todo.id}
-            todo={todo}
-            category={category}
-            onToggle={() => toggleTodo(category.id, todo.id)}
-            onNavigate={() => navigate(`/record/${category.id}#${todo.id}`)}
-          />
-        ))}
+        <DndContext id={`todos-${category.id}`} collisionDetection={closestCenter} onDragEnd={handleTodoDragEnd}>
+          <SortableContext items={activeTodos.map(t => t.id)} strategy={verticalListSortingStrategy}>
+            {activeTodos.map(todo => (
+              <TodoItem
+                key={todo.id}
+                todo={todo}
+                category={category}
+                onToggle={() => toggleTodo(category.id, todo.id)}
+                onNavigate={() => navigate(`/record/${category.id}#${todo.id}`)}
+                onUpdateTitle={(title) => updateTodo(category.id, todo.id, title)}
+                onDelete={() => deleteTodo(category.id, todo.id)}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
 
         {/* Add Todo Input */}
         {addingTodo ? (
@@ -192,6 +353,8 @@ function CategoryCard({ category }: { category: Category }) {
                   category={category}
                   onToggle={() => toggleTodo(category.id, todo.id)}
                   onNavigate={() => navigate(`/record/${category.id}#${todo.id}`)}
+                  onUpdateTitle={(title) => updateTodo(category.id, todo.id, title)}
+                  onDelete={() => deleteTodo(category.id, todo.id)}
                 />
               ))}
             </div>
@@ -203,7 +366,7 @@ function CategoryCard({ category }: { category: Category }) {
 }
 
 export default function OverviewPage() {
-  const { categories, addCategory } = useApp();
+  const { categories, addCategory, reorderTodos, reorderCategories } = useApp();
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
@@ -221,6 +384,18 @@ export default function OverviewPage() {
       setAddingCategory(false);
       setNewCategoryName('');
     }
+  };
+
+  const handleCategoryDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = categories.findIndex(c => c.id === active.id);
+    const newIndex = categories.findIndex(c => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newOrder = arrayMove(categories, oldIndex, newIndex);
+    reorderCategories(newOrder.map(c => c.id));
   };
 
   return (
@@ -263,10 +438,14 @@ export default function OverviewPage() {
           </div>
         )}
 
-        {/* Categories */}
-        {categories.map(category => (
-          <CategoryCard key={category.id} category={category} />
-        ))}
+        {/* Categories — draggable */}
+        <DndContext id="categories" collisionDetection={closestCenter} onDragEnd={handleCategoryDragEnd}>
+          <SortableContext items={categories.map(c => c.id)} strategy={verticalListSortingStrategy}>
+            {categories.map(category => (
+              <CategoryCard key={category.id} category={category} onReorderTodos={reorderTodos} />
+            ))}
+          </SortableContext>
+        </DndContext>
 
         {categories.length === 0 && (
           <div className="text-center py-20 text-gray-300">

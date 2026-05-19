@@ -40,19 +40,22 @@ function AutoResizeTextarea({
       onBlur={onBlur}
       onKeyDown={onKeyDown}
       autoFocus={autoFocus}
+      spellCheck={false}
       className={`w-full resize-none outline-none bg-transparent text-sm text-gray-700 placeholder-gray-300 leading-relaxed ${className}`}
     />
   );
 }
 
-// ── Category-level record item ──
+// ── Category-level record item (same style as todo record) ──
 
 function CategoryRecordItem({
   record,
+  onToggleCollapsed,
   onUpdateContent,
   onDelete,
 }: {
   record: RecordType;
+  onToggleCollapsed: () => void;
   onUpdateContent: (content: string) => void;
   onDelete: () => void;
 }) {
@@ -65,102 +68,39 @@ function CategoryRecordItem({
   };
 
   return (
-    <div className="group/cat-record relative">
-      <AutoResizeTextarea
-        value={content}
-        onChange={v => setContent(v)}
-        onBlur={handleBlur}
-        placeholder="Write your thoughts..."
-        className="min-h-[60px]"
-      />
-      <button
-        onClick={onDelete}
-        className="absolute top-2 right-2 opacity-0 group-hover/cat-record:opacity-100 transition-opacity p-1 rounded hover:bg-red-50"
-      >
-        <Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400" strokeWidth={1.5} />
-      </button>
-      <div className="border-b border-gray-50 mt-2" />
-    </div>
-  );
-}
-
-// ── Category Reflection Section ──
-
-function CategoryReflectionSection({ categoryId }: { categoryId: string }) {
-  const { addCategoryRecord, updateRecord, deleteRecord } = useApp();
-  const { categories } = useApp();
-
-  const category = categories.find(c => c.id === categoryId);
-  const records = category?.categoryRecords ?? [];
-  const [adding, setAdding] = useState(false);
-  const [newContent, setNewContent] = useState('');
-
-  // Show the latest record's content in the main textarea
-  const latestRecord = records.length > 0 ? records[records.length - 1] : null;
-
-  const handleAdd = () => {
-    if (newContent.trim()) {
-      addCategoryRecord(categoryId, newContent.trim());
-      setNewContent('');
-      setAdding(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleAdd();
-    }
-    if (e.key === 'Escape') {
-      setAdding(false);
-      setNewContent('');
-    }
-  };
-
-  return (
-    <div className="mb-10">
-      <p className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-3">
-        Category Reflection
-      </p>
-      <div className="border border-gray-100 rounded-xl p-4 bg-white hover:border-gray-200 transition-colors">
-        {/* Existing records */}
-        {records.map(record => (
-          <CategoryRecordItem
-            key={record.id}
-            record={record}
-            onUpdateContent={(content) => updateRecord(record.id, content)}
-            onDelete={() => deleteRecord(record.id)}
-          />
-        ))}
-
-        {/* Add new record input */}
-        {adding && (
-          <div className="mt-1">
-            <AutoResizeTextarea
-              value={newContent}
-              onChange={v => setNewContent(v)}
-              onKeyDown={handleKeyDown}
-              onBlur={() => {
-                if (!newContent.trim()) setAdding(false);
-              }}
-              placeholder="Write a reflection... (Enter to save, Esc to cancel)"
-              autoFocus
-              className="min-h-[60px]"
-            />
-          </div>
-        )}
-
-        {/* Add button */}
-        {!adding && (
-          <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 mt-1 text-gray-300 hover:text-gray-400 transition-colors text-sm py-1"
-          >
-            <Plus className="w-3.5 h-3.5" strokeWidth={1.5} />
-            Add reflection
-          </button>
-        )}
+    <div className="group/cat-record">
+      {/* Header: collapse + date + delete */}
+      <div className="flex items-center gap-2 py-1">
+        <button
+          onClick={onToggleCollapsed}
+          className="opacity-0 group-hover/cat-record:opacity-100 transition-opacity"
+        >
+          {record.collapsed ? (
+            <ChevronDown className="w-3 h-3 text-gray-400" strokeWidth={1.5} />
+          ) : (
+            <ChevronUp className="w-3 h-3 text-gray-400" strokeWidth={1.5} />
+          )}
+        </button>
+        <span className="text-xs text-gray-300 flex-1">
+          {new Date(record.createdAt).toLocaleDateString()}
+        </span>
+        <button
+          onClick={onDelete}
+          className="opacity-0 group-hover/cat-record:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-50"
+        >
+          <Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400" strokeWidth={1.5} />
+        </button>
       </div>
+
+      {!record.collapsed && (
+        <AutoResizeTextarea
+          value={content}
+          onChange={v => setContent(v)}
+          onBlur={handleBlur}
+          placeholder="Write your thoughts..."
+          className="min-h-[60px] pl-4 pb-2"
+        />
+      )}
     </div>
   );
 }
@@ -337,14 +277,14 @@ function TodoRecordSection({ todo, categoryId, isHighlighted }: { todo: Todo; ca
   );
 }
 
-// ── Main Record Page ──
-
 export default function RecordPage() {
   const { categoryId } = useParams<{ categoryId: string }>();
   const navigate = useNavigate();
-  const { categories } = useApp();
+  const { categories, addCategoryRecord, updateRecord, toggleRecordCollapsed, deleteRecord } = useApp();
   const [highlightedTodoId, setHighlightedTodoId] = useState<string | null>(null);
   const [completedOpen, setCompletedOpen] = useState(false);
+  const [addingCatRecord, setAddingCatRecord] = useState(false);
+  const [newCatRecordContent, setNewCatRecordContent] = useState('');
 
   const category = categories.find(c => c.id === categoryId);
 
@@ -368,6 +308,25 @@ export default function RecordPage() {
   const activeTodos = category.todos.filter(t => !t.completed);
   const completedTodos = category.todos.filter(t => t.completed);
 
+  const handleAddCatRecord = () => {
+    if (newCatRecordContent.trim()) {
+      addCategoryRecord(category.id, newCatRecordContent.trim());
+      setNewCatRecordContent('');
+      setAddingCatRecord(false);
+    }
+  };
+
+  const handleCatRecordKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleAddCatRecord();
+    }
+    if (e.key === 'Escape') {
+      setAddingCatRecord(false);
+      setNewCatRecordContent('');
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-2xl mx-auto px-10 py-10">
@@ -383,11 +342,49 @@ export default function RecordPage() {
           </div>
         </div>
 
-        {/* Category Title */}
-        <h1 className="text-3xl font-semibold text-gray-900 mb-8">{category.name}</h1>
+        {/* Category Title + Add Button */}
+        <div className="flex items-center justify-between mb-4 group">
+          <h1 className="text-3xl font-semibold text-gray-900">{category.name}</h1>
+          <button
+            onClick={() => setAddingCatRecord(true)}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-gray-100 text-gray-400"
+            title="Add a reflection"
+          >
+            <Plus className="w-4 h-4" strokeWidth={1.5} />
+          </button>
+        </div>
 
-        {/* Category Reflection Section */}
-        <CategoryReflectionSection categoryId={categoryId} />
+        {/* Category-level records — between title and TODOS */}
+        {category.categoryRecords.length > 0 && (
+          <div className="mb-8">
+            {category.categoryRecords.map(record => (
+              <CategoryRecordItem
+                key={record.id}
+                record={record}
+                onToggleCollapsed={() => toggleRecordCollapsed(record.id, !record.collapsed)}
+                onUpdateContent={(content) => updateRecord(record.id, content)}
+                onDelete={() => deleteRecord(record.id)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* New category record input */}
+        {addingCatRecord && (
+          <div className="mb-8">
+            <AutoResizeTextarea
+              value={newCatRecordContent}
+              onChange={v => setNewCatRecordContent(v)}
+              onKeyDown={handleCatRecordKeyDown}
+              onBlur={() => {
+                if (!newCatRecordContent.trim()) setAddingCatRecord(false);
+              }}
+              placeholder="Write a reflection... (Enter to save, Esc to cancel)"
+              autoFocus
+              className="min-h-[60px]"
+            />
+          </div>
+        )}
 
         {/* Todos Section */}
         <div>

@@ -30,6 +30,7 @@ function supabaseCategoryToApp(c: SupabaseCategory, todos: Todo[], catRecords: R
   return {
     id: c.id,
     name: c.name,
+    orderIndex: c.order_index,
     todos,
     categoryRecords: catRecords,
   };
@@ -39,7 +40,7 @@ function supabaseCategoryToApp(c: SupabaseCategory, todos: Todo[], catRecords: R
 
 export async function fetchAllCategories(): Promise<Category[]> {
   const [catsRes, todosRes, recordsRes] = await Promise.all([
-    supabase.from('categories').select('*').order('created_at', { ascending: true }),
+    supabase.from('categories').select('*').order('order_index', { ascending: true }),
     supabase.from('todos').select('*').order('order_index', { ascending: true }),
     supabase.from('records').select('*').order('created_at', { ascending: true }),
   ]);
@@ -84,10 +85,26 @@ export async function fetchAllCategories(): Promise<Category[]> {
 }
 
 export async function addCategory(name: string, userId: string): Promise<void> {
+  // Get max order_index
+  const { data: existing } = await supabase
+    .from('categories')
+    .select('order_index')
+    .order('order_index', { ascending: false })
+    .limit(1);
+
+  const nextOrderIndex =
+    existing && existing.length > 0 ? existing[0].order_index + 1 : 0;
+
   const { error } = await supabase.from('categories').insert({
     name,
     user_id: userId,
+    order_index: nextOrderIndex,
   });
+  if (error) throw error;
+}
+
+export async function updateCategory(id: string, name: string): Promise<void> {
+  const { error } = await supabase.from('categories').update({ name }).eq('id', id);
   if (error) throw error;
 }
 
@@ -96,6 +113,7 @@ export async function deleteCategory(id: string): Promise<void> {
   const { error } = await supabase.from('categories').delete().eq('id', id);
   if (error) throw error;
 }
+
 
 export async function addTodo(categoryId: string, title: string, userId: string): Promise<void> {
   // Get max order_index for this category
@@ -134,10 +152,37 @@ export async function toggleTodo(
   if (error) throw error;
 }
 
+export async function updateTodo(
+  _categoryId: string,
+  todoId: string,
+  title: string
+): Promise<void> {
+  const { error } = await supabase.from('todos').update({ title }).eq('id', todoId);
+  if (error) throw error;
+}
+
 export async function deleteTodo(_categoryId: string, todoId: string): Promise<void> {
   // Records cascade delete via FK
   const { error } = await supabase.from('todos').delete().eq('id', todoId);
   if (error) throw error;
+}
+
+export async function reorderTodos(_categoryId: string, todoIds: string[]): Promise<void> {
+  const updates = todoIds.map((id, index) =>
+    supabase.from('todos').update({ order_index: index }).eq('id', id)
+  );
+  const results = await Promise.all(updates);
+  const firstError = results.find(r => r.error)?.error;
+  if (firstError) throw firstError;
+}
+
+export async function reorderCategories(categoryIds: string[]): Promise<void> {
+  const updates = categoryIds.map((id, index) =>
+    supabase.from('categories').update({ order_index: index }).eq('id', id)
+  );
+  const results = await Promise.all(updates);
+  const firstError = results.find(r => r.error)?.error;
+  if (firstError) throw firstError;
 }
 
 // ── Category-level record CRUD ──

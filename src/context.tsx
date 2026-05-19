@@ -5,10 +5,14 @@ import type { Category, Todo, Record } from './types';
 import {
   fetchAllCategories,
   addCategory as apiAddCategory,
+  updateCategory as apiUpdateCategory,
   deleteCategory as apiDeleteCategory,
   addTodo as apiAddTodo,
   toggleTodo as apiToggleTodo,
+  updateTodo as apiUpdateTodo,
   deleteTodo as apiDeleteTodo,
+  reorderTodos as apiReorderTodos,
+  reorderCategories as apiReorderCategories,
   addRecord as apiAddRecord,
   addCategoryRecord as apiAddCategoryRecord,
   updateRecord as apiUpdateRecord,
@@ -29,12 +33,16 @@ interface AppContextValue {
 
   // Category actions
   addCategory: (name: string) => void;
+  updateCategory: (id: string, name: string) => void;
   deleteCategory: (id: string) => void;
+  reorderCategories: (categoryIds: string[]) => void;
 
   // Todo actions
   addTodo: (categoryId: string, title: string) => void;
   toggleTodo: (categoryId: string, todoId: string) => void;
+  updateTodo: (categoryId: string, todoId: string, title: string) => void;
   deleteTodo: (categoryId: string, todoId: string) => void;
+  reorderTodos: (categoryId: string, todoIds: string[]) => void;
 
   // Record actions
   addCategoryRecord: (categoryId: string, content: string) => void;
@@ -127,10 +135,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [mutate, user]
   );
 
+  const handleUpdateCategory = useCallback(
+    (id: string, name: string) =>
+      mutate(
+        () => setCategories(prev => prev.map(c => (c.id === id ? { ...c, name } : c))),
+        apiUpdateCategory(id, name)
+      ),
+    [mutate]
+  );
+
   const handleDeleteCategory = useCallback(
     (id: string) =>
       mutate(() => setCategories(prev => prev.filter(c => c.id !== id)), apiDeleteCategory(id)),
     [mutate]
+  );
+
+  const handleReorderCategories = useCallback(
+    (categoryIds: string[]) =>
+      mutate(
+        () => {
+          const catMap = new Map(categories.map(c => [c.id, c]));
+          const reordered = categoryIds.map(id => catMap.get(id)!).filter(Boolean);
+          setCategories(reordered);
+        },
+        apiReorderCategories(categoryIds)
+      ),
+    [mutate, categories]
   );
 
   // ── Todo actions ──
@@ -185,6 +215,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [categories, mutate]
   );
 
+  const handleUpdateTodo = useCallback(
+    (categoryId: string, todoId: string, title: string) =>
+      mutate(
+        () =>
+          setCategories(prev =>
+            prev.map(c =>
+              c.id === categoryId
+                ? { ...c, todos: c.todos.map(t => (t.id === todoId ? { ...t, title } : t)) }
+                : c
+            )
+          ),
+        apiUpdateTodo(categoryId, todoId, title)
+      ),
+    [mutate]
+  );
+
   const handleDeleteTodo = useCallback(
     (categoryId: string, todoId: string) =>
       mutate(
@@ -193,6 +239,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             prev.map(c => (c.id === categoryId ? { ...c, todos: c.todos.filter(t => t.id !== todoId) } : c))
           ),
         apiDeleteTodo(categoryId, todoId)
+      ),
+    [mutate]
+  );
+
+  const handleReorderTodos = useCallback(
+    (categoryId: string, todoIds: string[]) =>
+      mutate(
+        () =>
+          setCategories(prev =>
+            prev.map(c => {
+              if (c.id !== categoryId) return c;
+              const todoMap = new Map(c.todos.map(t => [t.id, t]));
+              const reordered = todoIds.map(id => todoMap.get(id)!).filter(Boolean);
+              return { ...c, todos: reordered };
+            })
+          ),
+        apiReorderTodos(categoryId, todoIds)
       ),
     [mutate]
   );
@@ -313,10 +376,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         dataLoading,
         error,
         addCategory: handleAddCategory,
+        updateCategory: handleUpdateCategory,
         deleteCategory: handleDeleteCategory,
+        reorderCategories: handleReorderCategories,
         addTodo: handleAddTodo,
         toggleTodo: handleToggleTodo,
+        updateTodo: handleUpdateTodo,
         deleteTodo: handleDeleteTodo,
+        reorderTodos: handleReorderTodos,
         addCategoryRecord: handleAddCategoryRecord,
         addRecord: handleAddRecord,
         updateRecord: handleUpdateRecord,
