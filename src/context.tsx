@@ -128,7 +128,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       mutate(
         () => {
           const tempId = 'temp-' + Date.now();
-          setCategories(prev => [...prev, { id: tempId, name, todos: [], categoryRecords: [] }]);
+          setCategories(prev => [...prev, { id: tempId, name, orderIndex: Date.now(), todos: [], categoryRecords: [] }]);
         },
         apiAddCategory(name, user!.id)
       ),
